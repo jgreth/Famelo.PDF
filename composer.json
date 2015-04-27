@@ -1,1 +1,18 @@
-{"name":"famelo\/pdf","type":"typo3-flow-package","description":"","require":{"typo3\/flow":"*"},"autoload":{"psr-0":{"Famelo\\PDF":"Classes"}}}
+{
+  "name":"famelo\/pdf",
+  "type":"typo3-flow-package",
+  "description":"Provides a quick and simple way to generate a PDF from a Fluid Template through the MPDF library",
+  "require": {
+    "typo3\/flow": "*"
+  },
+  "suggest": {
+    "knplabs/knp-snappy":  "wkhtmltopdf wrapper to use the WebkitGenerator",
+    "itbz/fpdi": "fpdi library to use the FpdiGenerator"
+  },
+  "minimum-stability": "dev",
+  "autoload": {
+    "psr-0": {
+      "Famelo\\PDF":"Classes"
+    }
+  }
+}

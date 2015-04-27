@@ -2,7 +2,7 @@
 namespace Famelo\PDF;
 
 /*                                                                        *
- * This script belongs to the FLOW3 package "SwiftMailer".                *
+ * This script belongs to the FLOW3 package "Famelo.PDF".                 *
  *                                                                        *
  * It is free software; you can redistribute it and/or modify it under    *
  * the terms of the GNU Lesser General Public License, either version 3   *
@@ -11,13 +11,10 @@ namespace Famelo\PDF;
  * The TYPO3 project - inspiring people to share!                         *
  *                                                                        */
 
+use Famelo\PDF\Generator\PdfGeneratorInterface;
 use TYPO3\Flow\Annotations as Flow;
 
-require_once(FLOW_PATH_PACKAGES . 'Application/Famelo.PDF/Resources/Private/PHP/mpdf/mpdf.php');
-
 /**
- * Document class for the SwiftMailer package
- *
  * @Flow\Scope("prototype")
  */
 class Document {
@@ -49,13 +46,48 @@ class Document {
 	/**
 	 * The view
 	 *
-	 * @var \TYPO3\Fluid\View\StandaloneView
+	 * @var \Famelo\PDF\View\StandaloneView
 	 * @Flow\Inject
 	 */
 	protected $view;
 
-	public function __construct($document) {
+	/**
+	 * @var string
+	 */
+	protected $format;
+
+	/**
+	 * @var array
+	 */
+	protected $options = array();
+
+	/**
+	 *
+	 * @Flow\Inject(setting="DefaultGenerator", package="Famelo.PDF")
+	 * @var string
+	 */
+	protected $defaultGenerator;
+
+	/**
+	 *
+	 * @Flow\Inject(setting="DefaultGeneratorOptions", package="Famelo.PDF")
+	 * @var array
+	 */
+	protected $defaultGeneratorOptions;
+
+	/**
+	 * @var PdfGeneratorInterface
+	 */
+	protected $generator;
+
+	/**
+	 * @var string
+	 */
+	protected $templateSource;
+
+	public function __construct($document, $format = 'A4') {
 		$this->setDocument($document);
+		$this->format = $format;
 	}
 
 	public function setDocument($document) {
@@ -67,6 +99,24 @@ class Document {
 			$this->document = $document;
 		}
 		return $this;
+	}
+
+	public function setTemplateSource($templateSource) {
+		$this->templateSource = $templateSource;
+	}
+
+	public function setFormat($format) {
+		$this->format = $format;
+	}
+
+	public function getGenerator() {
+		if (!$this->generator instanceof PdfGeneratorInterface) {
+			$this->generator = new $this->defaultGenerator($this->defaultGeneratorOptions, $this->view);
+		}
+		foreach ($this->options as $name => $value) {
+			$this->generator->setOption($name, $value);
+		}
+		return $this->generator;
 	}
 
 	public function render() {
@@ -81,49 +131,66 @@ class Document {
 			'@package' => $this->package,
 			'@document' => $this->document
 		);
-		$template = str_replace(array_keys($replacements), array_values($replacements), $this->templatePath);
-		$this->view->setTemplatePathAndFilename($template);
+		if ($this->templateSource === NULL) {
+			$template = str_replace(array_keys($replacements), array_values($replacements), $this->templatePath);
+			$this->view->setTemplatePathAndFilename($template);
 
-		$layoutRootPath = str_replace(array_keys($replacements), array_values($replacements), $this->layoutRootPath);
-		$this->view->setLayoutRootPath($layoutRootPath);
+			$layoutRootPath = str_replace(array_keys($replacements), array_values($replacements), $this->layoutRootPath);
+			$this->view->setLayoutRootPath($layoutRootPath);
 
-		$partialRootPath = str_replace(array_keys($replacements), array_values($replacements), $this->partialRootPath);
-		$this->view->setPartialRootPath($partialRootPath);
+			$partialRootPath = str_replace(array_keys($replacements), array_values($replacements), $this->partialRootPath);
+			$this->view->setPartialRootPath($partialRootPath);
+		} else {
+			$this->view->setTemplateSource($this->templateSource);
+		}
 
 		$this->view->setFormat('html');
 
 		$this->view->getRequest()->setControllerPackageKey($this->package);
 
-		return $this->view->render();
+		$content = $this->view->render();
+		return $content;
+	}
+
+	public function setOptionsByViewHelper($generator) {
+		$viewHelperVariableContainer = $this->view->getViewHelperVariableContainer();
+		if ($viewHelperVariableContainer->exists('Famelo\Pdf\ViewHelpers\HeaderViewHelper', 'header')) {
+			$header = $viewHelperVariableContainer->get('Famelo\Pdf\ViewHelpers\HeaderViewHelper', 'header');
+			$generator->setHeader($header);
+		}
+		$viewHelperVariableContainer = $this->view->getViewHelperVariableContainer();
+		if ($viewHelperVariableContainer->exists('Famelo\Pdf\ViewHelpers\FooterViewHelper', 'footer')) {
+			$footer = $viewHelperVariableContainer->get('Famelo\Pdf\ViewHelpers\FooterViewHelper', 'footer');
+			$generator->setFooter($footer);
+		}
+	}
+
+	public function setOption($name, $value) {
+		$this->options[$name] = $value;
 	}
 
 	public function send($filename = NULL) {
 		$content = $this->render();
-
-		$previousErrorReporting = error_reporting(0);
-		$pdf = new \mPDF();
-		$pdf->WriteHTML($content);
-		$output = $pdf->Output('', 'i');
-		error_reporting($previousErrorReporting);
+		$generator = $this->getGenerator();
+		$this->setOptionsByViewHelper($generator);
+		$generator->setFormat($this->format);
+		$generator->sendPdf($content, $filename);
 	}
 
 	public function download($filename = NULL) {
 		$content = $this->render();
-
-		$previousErrorReporting = error_reporting(0);
-		$pdf = new \mPDF();
-		$pdf->WriteHTML($content);
-		$output = $pdf->Output($filename, 'd');
-		error_reporting($previousErrorReporting);
+		$generator = $this->getGenerator();
+		$this->setOptionsByViewHelper($generator);
+		$generator->setFormat($this->format);
+		$generator->downloadPdf($content, $filename);
 	}
 
 	public function save($filename) {
-		$previousErrorReporting = error_reporting(0);
-		$pdf = new \mPDF();
-		$pdf->WriteHTML($content);
-		$pdf->Output($filename, 'f');
-		error_reporting($previousErrorReporting);
-		exit;
+		$content = $this->render();
+		$generator = $this->getGenerator();
+		$this->setOptionsByViewHelper($generator);
+		$generator->setFormat($this->format);
+		$generator->savePdf($content, $filename);
 	}
 
 	public function assign($key, $value) {
